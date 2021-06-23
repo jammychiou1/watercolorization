@@ -6,8 +6,8 @@ from perlin_noise import PerlinNoise
 import random
 
 # load the input image
-image = cv2.imread('small_2.jpg')
-#image = cv2.imread('landscape29.png')
+#image = cv2.imread('small_2.jpg')
+image = cv2.imread('20_2.jpg')
 print(image.shape)
 print(image[0][0])
 rectangle = (image.shape[0], image.shape[1])
@@ -81,6 +81,9 @@ def get_salient(image):
 
     steps = 12
     image_reduce, values, colors = reduce_color(image, steps)
+    plt.imsave('reduce.png', image_reduce)
+    plt.imshow(cv2.cvtColor(image_reduce, cv2.COLOR_BGR2RGB))
+    plt.show()
 
     dc = {}
     for val1 in colors:
@@ -88,9 +91,6 @@ def get_salient(image):
             i1, j1, k1 = np.unravel_index(val1, (steps, steps, steps))
             i2, j2, k2 = np.unravel_index(val2, (steps, steps, steps))
             dc[(val1, val2)] = np.sum((val_to_lab(i1, j1, k1, steps) - val_to_lab(i2, j2, k2, steps)) ** 2) ** 0.5
-
-    plt.imshow(cv2.cvtColor(image_reduce, cv2.COLOR_BGR2RGB))
-    plt.show()
 
     # Graph-Based Image Segmentation 分割器
     segmentator = cv2.ximgproc.segmentation.createGraphSegmentation(sigma=0.5, k=300, min_size=200)
@@ -100,6 +100,11 @@ def get_salient(image):
     #print(np.max(segment_map), np.min(segment_map))
     #print(np.max(values))
     nseg = np.max(segment_map) + 1
+
+    colors = np.random.rand(nseg, 3)
+    plt.imsave('segment1.png', colors[segment_map])
+    plt.imshow(colors[segment_map])
+    plt.show()
 
     segments = [{'cnt': 0, 'x': 0, 'y': 0, 'clrs': {}, 'sal': 0} for i in range(nseg)]
 
@@ -161,6 +166,7 @@ def get_salient_region(image):
     else:
         saliency = np.load('sal.npy')
 
+    plt.imsave('saliency.png', saliency)
     plt.imshow(saliency)
     plt.show()
     print(np.max(saliency), np.min(saliency))
@@ -168,8 +174,6 @@ def get_salient_region(image):
     #t = (np.max(saliency) + np.min(saliency)) / 2
     #mask = (saliency > t).astype(np.uint8)
     _, mask = cv2.threshold(saliency, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    plt.imshow(mask)
-    plt.show()
 
     xs = np.arange(image.shape[0])
     ys = np.arange(image.shape[1])
@@ -212,7 +216,11 @@ def get_salient_region(image):
     plt.show()
     mask = ((trimap == 1) | (trimap == 3)) & edge
     '''
-    return (mask != 0) & edge
+    mask = (mask != 0) & edge
+    plt.imsave('mask.png', mask)
+    plt.imshow(mask)
+    plt.show()
+    return mask
 
 def get_dist_field(image, mask):
     xs = np.arange(image.shape[0])
@@ -267,13 +275,14 @@ def get_dist_field(image, mask):
     frm = np.stack((frmx, frmy, np.ones_like(mask)), axis=-1)
     here = np.stack((xs, ys, np.ones_like(mask)), axis=-1)
 
-    plt.imshow(mask)
+    #plt.imshow(mask)
     a = np.einsum('xyc, rc -> xyr', frm, box)
     b = np.einsum('xyc, rc -> xyr', here, box)
     dist = np.max((a - b) / a, axis=2)
     dist = ndimage.gaussian_filter(dist, sigma=10)
     #for i in range(20):
     #    dist = gaussian_filter(dist, sigma=5)
+    plt.imsave('dist_field.png', dist)
     plt.imshow(dist)
     plt.show()
 
@@ -322,6 +331,7 @@ def abstraction(image):
     avg_brightness = avg_color[0, :, 2].astype(np.float32)
 
     colors = np.random.rand(nseg, 3)
+    plt.imsave('segment2.png', colors[segment_map])
     plt.imshow(colors[segment_map])
     plt.show()
     plt.imshow(dist_field)
@@ -330,40 +340,35 @@ def abstraction(image):
     plt.show()
 
     abstract = np.zeros_like(image_float)
-    cases = [0, 0, 0]
+    cases = [0, 0]
     for i in range(image.shape[0]):
         print(i)
         for j in range(image.shape[1]):
             cnt = 0
             mean = np.zeros(3)
-            if inside_image[i, j]:
-                for ii in range(i - 3, i + 4):
-                    for jj in range(j - 3, j + 4):
-                        if 0 <= ii and ii < image.shape[0] and 0 <= jj and jj < image.shape[1]:
-                            if segment_map[i, j] == segment_map[ii, jj]:
-                                cnt += 1
-                                mean += image_float[ii, jj]
-                                cases[0] += 1
-            else:
+            if not inside_image[i, j]:
                 sz = round(np.clip(2 * 7 * (dist_field[i, j] + 0.3), 6, 13))
                 for ii in range(i - sz // 2, i - sz // 2 + sz):
                     for jj in range(j - sz // 2, j - sz // 2 + sz):
                         if 0 <= ii and ii < image.shape[0] and 0 <= jj and jj < image.shape[1]:
-                            if segment_map[i, j] == segment_map[ii, jj]:
-                                cnt += 1
-                                mean += image_float[ii, jj]
-                                cases[1] += 1
-                            else:
+                            if segment_map[i, j] != segment_map[ii, jj]:
                                 color_diff = np.sum((image_float[i, j] - image_float[ii, jj] ) ** 2) ** 0.5
                                 if color_diff < 0.3 * dist_field[i, j]:
                                     cnt += 1
                                     mean += image_float[ii, jj]
-                                    cases[2] += 1
+                                    cases[1] += 1
+            for ii in range(i - 3, i + 4):
+                for jj in range(j - 3, j + 4):
+                    if 0 <= ii and ii < image.shape[0] and 0 <= jj and jj < image.shape[1]:
+                        if segment_map[i, j] == segment_map[ii, jj]:
+                            cnt += 1
+                            mean += image_float[ii, jj]
+                            cases[0] += 1
             abstract[i, j] = mean / (cnt + 1e-7)
     print(cases)
     return abstract, inside_image, segment_map, avg_hue, avg_brightness
 
-if 1 == 1:
+if 0 == 1:
     abstract, inside_image, segment_map, avg_hue, avg_brightness = abstraction(image)
     np.save('abstract.npy', abstract) 
     np.save('inside_image.npy', inside_image) 
@@ -378,11 +383,15 @@ else:
     avg_brightness = np.load('avg_brightness.npy')
 
 print(avg_hue.shape)
+plt.imsave('abstract.png', abstract[:, :, ::-1])
 plt.imshow(abstract[:, :, ::-1])
 plt.show()
 
-gradx = np.mean(cv2.Sobel(image, cv2.CV_32F, 1, 0) / 8.0 / 255, axis=2)
-grady = np.mean(cv2.Sobel(image, cv2.CV_32F, 0, 1) / 8.0 / 255, axis=2)
+#print(abstract.dtype)
+#print(np.max(abstract))
+#print(image.dtype)
+gradx = np.mean(cv2.Sobel(abstract, cv2.CV_64F, 1, 0) / 8.0, axis=2)
+grady = np.mean(cv2.Sobel(abstract, cv2.CV_64F, 0, 1) / 8.0, axis=2)
 print(gradx.shape)
 print(np.max(gradx))
 
@@ -428,9 +437,9 @@ def classify_edge(abstract, inside_image, segment_map, avg_hue, avg_brightness, 
             if j < image.shape[1] - 1:
                 process_edge(segment_map, inside_image, avg_hue, avg_brightness, gradx, grady, edge_type, feather_source, i, j, i, j + 1)
     edge_color = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float32)
+    plt.imsave('edge_type.png', edge_color[edge_type])
     plt.imshow(edge_color[edge_type])
-    plt.show()
-
+    plt.show() 
     kernel = np.ones((8, 8), dtype=np.uint8)
     type3 = edge_type == 3
     type3_gap = cv2.dilate(type3.astype(np.uint8), kernel, iterations=1)
@@ -510,6 +519,7 @@ def hand_tremor(abstract, segment_map, type1, type2):
     abstract = abstract * 2 / 3 + 0.25
     #feather_layer = np.ones_like(image, dtype=np.float32) * 0.001
     #feather_w = np.ones_like(image[:2], dtype=np.float32) * 0.001
+    plt.imsave('abstract_adjust.png', abstract[:, :, ::-1])
 
     for i in range(nseg):
         print('{} / {}'.format(i+1, nseg))
@@ -557,7 +567,7 @@ def hand_tremor(abstract, segment_map, type1, type2):
     canvas /= canvas_w[:, :, np.newaxis]
     return canvas
 
-if 1 == 1:
+if 0 == 1:
     type1, type2, type3, feather_source = classify_edge(abstract, inside_image, segment_map, avg_hue, avg_brightness, gradx, grady)
     canvas = hand_tremor(abstract, segment_map, type1, type2)
     np.save('feather_source.npy', feather_source) 
@@ -566,69 +576,137 @@ else:
     feather_source = np.load('feather_source.npy')
     canvas = np.load('canvas.npy')
     
+plt.imsave('hand_tremor.png', canvas[:, :, ::-1])
 plt.imshow(canvas[:, :, ::-1])
 plt.show()
 
-canvas_w = np.ones(image.shape[:2], dtype=np.float32)
+def wet_in_wet(canvas, feather_source, gradx, grady):
+    canvas_w = np.ones(canvas.shape[:2], dtype=np.float32)
 
-def get_kernel(r, a, b):
-    xs = np.arange(r).astype(np.float32)
-    ys = np.arange(r).astype(np.float32)
-    xs, ys = np.meshgrid(xs, ys, indexing='ij')
-    tmp = ((xs - (r - 1) / 2) / a) ** 2 + ((ys - (r - 1) / 2) / b) ** 2
-    return np.clip(1 - tmp, 0, 1)
+    def get_kernel(r, a, b):
+        xs = np.arange(r).astype(np.float32)
+        ys = np.arange(r).astype(np.float32)
+        xs, ys = np.meshgrid(xs, ys, indexing='ij')
+        tmp = ((xs - (r - 1) / 2) / a) ** 2 + ((ys - (r - 1) / 2) / b) ** 2
+        return np.clip(1 - tmp, 0, 1)
 
-feather = get_kernel(15, 7, 3.5)
-feather_sum = np.sum(feather)
-plt.imshow(feather)
-plt.show()
-feather_image = np.zeros_like(image, dtype=np.float32)
-feather_w = np.zeros(image.shape[:2], dtype=np.float32)
+    feather = get_kernel(15, 7, 1.5)
+    feather_sum = np.sum(feather)
+    plt.imshow(feather)
+    plt.show()
+    feather_image = np.zeros_like(canvas, dtype=np.float32)
+    feather_w = np.zeros(canvas.shape[:2], dtype=np.float32)
 
-for x in range(image.shape[0]):
-    for y in range(image.shape[1]):
-        if feather_source[x, y]:
-            gx = gradx[x, y]
-            gy = grady[x, y]
-            angle = np.arctan2(gy, gx)
-            r = np.random.uniform(3, 5)
-            dx = np.cos(angle)
-            dy = np.sin(angle)
-            basex = round(x + dx * r)
-            basey = round(y + dy * r)
-            if 0 <= basex < image.shape[0] and 0 <= basey < image.shape[1]:
-                canvas[basex, basey] = canvas[x, y]
-            
-for x in range(image.shape[0]):
-    for y in range(image.shape[1]):
-        if feather_source[x, y]:
-            gx = gradx[x, y]
-            gy = grady[x, y]
-            angle = np.arctan2(gy, gx)
-            feather_rot = ndimage.rotate(feather, angle * 180 / np.pi, reshape=False)
-            tmp = np.zeros((29, 29, 3))
-            for dx in range(-14, 15):
-                for dy in range(-14, 15):
-                    tmp[dx + 14, dy + 14] = canvas[np.clip(x + dx, 0, image.shape[0] - 1), np.clip(y + dy, 0, image.shape[1] - 1)]
-            for c in range(3):
-                #print(feather_rot.shape)
-                #print(tmp[:, :, c].shape)
-                filtered = ndimage.convolve(tmp[:, :, c], feather_rot)[7 : 22, 7 : 22] / feather_sum
-                prod = filtered * feather_rot
+    for x in range(canvas.shape[0]):
+        for y in range(canvas.shape[1]):
+            if feather_source[x, y]:
+                gx = gradx[x, y]
+                gy = grady[x, y]
+                angle = np.arctan2(gy, gx)
+                r = np.random.uniform(3, 5)
+                dx = np.cos(angle)
+                dy = np.sin(angle)
+                basex = round(x + dx * r)
+                basey = round(y + dy * r)
+                if 0 <= basex < canvas.shape[0] and 0 <= basey < canvas.shape[1]:
+                    canvas[basex, basey] = canvas[x, y]
+                
+    for x in range(canvas.shape[0]):
+        for y in range(canvas.shape[1]):
+            if feather_source[x, y]:
+                gx = gradx[x, y]
+                gy = grady[x, y]
+                angle = np.arctan2(gy, gx)
+                dx = np.cos(angle)
+                dy = np.sin(angle)
+                basex = round(x + dx * 3)
+                basey = round(y + dy * 3)
+                feather_rot = ndimage.rotate(feather, angle * 180 / np.pi, reshape=False)
+                tmp = np.zeros((29, 29, 3))
+                for dx in range(-14, 15):
+                    for dy in range(-14, 15):
+                        tmp[dx + 14, dy + 14] = canvas[np.clip(basex + dx, 0, canvas.shape[0] - 1), np.clip(basey + dy, 0, canvas.shape[1] - 1)]
+                for c in range(3):
+                    #print(feather_rot.shape)
+                    #print(tmp[:, :, c].shape)
+                    filtered = ndimage.convolve(tmp[:, :, c], feather_rot)[7 : 22, 7 : 22] / feather_sum
+                    prod = filtered * feather_rot
+                    for dx in range(-7, 8):
+                        for dy in range(-7, 8):
+                            if 0 <= basex + dx < canvas.shape[0] and 0 <= basey + dy < canvas.shape[1]:
+                                feather_image[basex + dx, basey + dy, c] += prod[dx + 7, dy + 7]
                 for dx in range(-7, 8):
                     for dy in range(-7, 8):
-                        if 0 <= x + dx < image.shape[0] and 0 <= y + dy < image.shape[1]:
-                            feather_image[x + dx, y + dy, c] += prod[dx + 7, dy + 7]
-            for dx in range(-7, 8):
-                for dy in range(-7, 8):
-                    if 0 <= x + dx < image.shape[0] and 0 <= y + dy < image.shape[1]:
-                        feather_w[x + dx, y + dy] += feather_rot[dx + 7, dy + 7]
+                        if 0 <= basex + dx < canvas.shape[0] and 0 <= basey + dy < canvas.shape[1]:
+                            feather_w[basex + dx, basey + dy] += feather_rot[dx + 7, dy + 7]
 
-feather_image /= feather_w[:, :, np.newaxis] + 0.0000001
-feather_w = np.clip(feather_w, 0, 1)
-#plt.imshow((1 - feather_w[:, :, np.newaxis]) + feather_image * feather_w[:, :, np.newaxis])
-#plt.show()
-canvas = canvas * (1 - feather_w[:, :, np.newaxis]) + feather_image * feather_w[:, :, np.newaxis]
-print(np.min(canvas), np.max(canvas))
+    feather_image /= feather_w[:, :, np.newaxis] + 0.0000001
+    feather_w = np.clip(feather_w, 0, 1)
+    #plt.imshow((1 - feather_w[:, :, np.newaxis]) + feather_image * feather_w[:, :, np.newaxis])
+    #plt.show()
+    canvas = canvas * (1 - feather_w[:, :, np.newaxis]) + feather_image * feather_w[:, :, np.newaxis]
+    print(np.min(canvas), np.max(canvas))
+    plt.imsave('feather.png', canvas[:, :, ::-1])
+    plt.imshow(canvas[:, :, ::-1])
+    plt.show()
+    return canvas
+
+if 0 == 1:
+    canvas = wet_in_wet(canvas, feather_source, gradx, grady)
+    np.save('canvas_wet.npy', canvas)
+else:
+    canvas = np.load('canvas_wet.npy')
+
+gradx = np.mean(cv2.Sobel(canvas, cv2.CV_64F, 1, 0) / 8.0, axis=2)
+grady = np.mean(cv2.Sobel(canvas, cv2.CV_64F, 0, 1) / 8.0, axis=2)
+darkening = np.abs(gradx) + np.abs(grady)
+plt.imsave('darkening.png', darkening)
+plt.imshow(darkening)
+plt.show()
+
+if 0 == 1:
+    f0 = 1 / 50
+    noise1 = PerlinNoise(octaves=f0, seed=100)
+    noise2 = PerlinNoise(octaves=f0 * 2, seed=200)
+    noise3 = PerlinNoise(octaves=f0 * 4, seed=300)
+    r = 1 / 2
+    stacked = np.array([[noise1([x, y]) + r * noise2([x, y]) + r ** 2 * noise3([x, y]) for y in range(image.shape[1])] for x in range(image.shape[0])])
+    np.save('stacked.npy', stacked) 
+else:
+    stacked = np.load('stacked.npy')
+plt.imsave('stacked.png', stacked)
+plt.imshow(stacked)
+plt.show()
+print(np.max(canvas))
+d = (darkening * 15 + stacked) / 2
+canvas -= (canvas - canvas ** 2) * d[:, :, np.newaxis]
+canvas = np.clip(canvas, 0, 1)
+plt.imsave('other1.png', canvas[:, :, ::-1])
 plt.imshow(canvas[:, :, ::-1])
+plt.show()
+if 0 == 1:
+    noise_paper = PerlinNoise(octaves=1 / 2.5, seed=400)
+    noise_paper = np.array([[noise_paper([x, y]) for y in range(image.shape[1])] for x in range(image.shape[0])])
+    np.save('noise_paper.npy', noise_paper) 
+else:
+    noise_paper = np.load('noise_paper.npy')
+plt.imshow(noise_paper)
+plt.show()
+gradx = cv2.Sobel(noise_paper, cv2.CV_64F, 1, 0) / 8.0
+grady = cv2.Sobel(noise_paper, cv2.CV_64F, 0, 1) / 8.0
+plt.imshow(gradx)
+plt.show()
+xs = np.arange(image.shape[0]).astype(np.float32)
+ys = np.arange(image.shape[1]).astype(np.float32)
+xs, ys = np.meshgrid(xs, ys, indexing='ij')
+xs += gradx * 2.5
+ys += grady * 2.5
+plt.imshow(xs)
+plt.show()
+gran = np.zeros_like(canvas)
+for i in range(3):
+    gran[:, :, i] = ndimage.map_coordinates(canvas[:, :, i], [xs, ys], mode='nearest')
+gran = np.clip(gran, 0, 1)
+plt.imsave('output.png', gran[:, :, ::-1])
+plt.imshow(gran[:,:,::-1])
 plt.show()
